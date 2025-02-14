@@ -18,12 +18,14 @@ import os
 import platform
 import tempfile
 import unittest
-from typing import Callable, Union
+from typing import Callable, Iterable, List, Union
 
 from pyspark.errors import PythonException, AnalysisException
 from pyspark.sql.datasource import (
     DataSource,
     DataSourceReader,
+    EqualTo,
+    Filter,
     InputPartition,
     DataSourceWriter,
     DataSourceArrowWriter,
@@ -245,6 +247,120 @@ class BasePythonDataSourceTestsMixin:
         df = self.spark.read.format("memory").option("num_partitions", 2).load()
         assertDataFrameEqual(df, [Row(x=0, y="0"), Row(x=1, y="1")])
         self.assertEqual(df.select(spark_partition_id()).distinct().count(), 2)
+
+    def test_filter_pushdown(self):
+        class TestDataSourceReader(DataSourceReader):
+            def __init__(self):
+                self.has_filter = False
+
+            def pushdownFilters(self, filters: List[Filter]) -> Iterable[Filter]:
+                assert len(filters) == 2, filters
+                assert set(filters) == {EqualTo(("x",), 1), EqualTo(("y",), 2)}, filters
+                self.has_filter = True
+                # pretend we support x = 1 filter but in fact we don't
+                # so we only return y = 2 filter
+                yield EqualTo(("y",), 2)
+
+            def partitions(self):
+                assert self.has_filter
+                return super().partitions()
+
+            def read(self, partition):
+                assert self.has_filter
+                yield [1, 1]
+                yield [1, 2]
+                yield [2, 2]
+
+        class TestDataSource(DataSource):
+            @classmethod
+            def name(cls):
+                return "test"
+
+            def schema(self):
+                return "x int, y int"
+
+            def reader(self, schema) -> "DataSourceReader":
+                return TestDataSourceReader()
+
+        self.spark.dataSource.register(TestDataSource)
+        df = self.spark.read.format("test").load().filter("x = 1 and y = 2")
+        # only the y = 2 filter is applied post scan
+        assertDataFrameEqual(df, [Row(x=1, y=2), Row(x=2, y=2)])
+
+    def test_extraneous_filter(self):
+        class TestDataSourceReader(DataSourceReader):
+            def pushdownFilters(self, filters: List[Filter]) -> Iterable[Filter]:
+                yield EqualTo(("",), 1)
+
+            def partitions(self):
+                assert False
+
+            def read(self, partition):
+                assert False
+
+        class TestDataSource(DataSource):
+            @classmethod
+            def name(cls):
+                return "test"
+
+            def schema(self):
+                return "x int"
+
+            def reader(self, schema) -> "DataSourceReader":
+                return TestDataSourceReader()
+
+        self.spark.dataSource.register(TestDataSource)
+        with self.assertRaisesRegex(Exception, "DATA_SOURCE_EXTRANEOUS_FILTERS"):
+            self.spark.read.format("test").load().filter("x = 1").show()
+
+    def test_filter_pushdown_error(self):
+        class TestDataSourceReader(DataSourceReader):
+            def pushdownFilters(self, filters: List[Filter]) -> Iterable[Filter]:
+                raise Exception("dummy error")
+
+            def read(self, partition):
+                yield [1]
+
+        class TestDataSource(DataSource):
+            @classmethod
+            def name(cls):
+                return "test"
+
+            def schema(self):
+                return "x int"
+
+            def reader(self, schema) -> "DataSourceReader":
+                return TestDataSourceReader()
+
+        self.spark.dataSource.register(TestDataSource)
+        df = self.spark.read.format("test").load().filter("cos(x) > 0")
+        assertDataFrameEqual(df, [Row(x=1)])  # works when not pushing down filters
+        with self.assertRaisesRegex(Exception, "dummy error"):
+            df.filter("x = 1").show()
+
+    def test_unsupported_filter(self):
+        class TestDataSourceReader(DataSourceReader):
+            def pushdownFilters(self, filters: List[Filter]) -> Iterable[Filter]:
+                assert filters == [EqualTo(("x",), 1)], filters
+                return filters
+
+            def read(self, partition):
+                yield [1, 2, 3]
+
+        class TestDataSource(DataSource):
+            @classmethod
+            def name(cls):
+                return "test"
+
+            def schema(self):
+                return "x int, y int, z int"
+
+            def reader(self, schema) -> "DataSourceReader":
+                return TestDataSourceReader()
+
+        self.spark.dataSource.register(TestDataSource)
+        df = self.spark.read.format("test").load().filter("x = 1 and y = z")
+        assertDataFrameEqual(df, [])
 
     def _get_test_json_data_source(self):
         import json
