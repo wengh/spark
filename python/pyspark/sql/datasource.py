@@ -249,14 +249,32 @@ class DataSource(ABC):
         )
 
 
+ColumnPath = Tuple[str, ...]
+
+
 @dataclass(frozen=True)
 class Filter(ABC):
-    pass
+    """
+    The base class for filters used for filter pushdown.
+
+    .. versionadded: 4.1.0
+
+    Notes
+    -----
+    Column references are represented as a tuple of strings. For example, the column
+    `col1` is represented as `("col1",)`, and the nested column `a.b.c` is
+    represented as `("a", "b", "c")`.
+
+    Literal values are represented as Python objects of types such as
+    `int`, `float`, `str`, `bool`, `datetime`, etc.
+    See `Data Types <https://spark.apache.org/docs/latest/sql-ref-datatypes.html>`_
+    for more information about how values are represented in Python.
+    """
 
 
 @dataclass(frozen=True)
 class EqualTo(Filter):
-    columnPath: Tuple[str]
+    columnPath: ColumnPath
     value: Any
 
 
@@ -307,6 +325,51 @@ class DataSourceReader(ABC):
     """
 
     def pushdownFilters(self, filters: List["Filter"]) -> Iterable["Filter"]:
+        """
+        Called with the list of filters that can be pushed down to the data source.
+
+        Filter pushdown allows the data source to handle a subset of filters. This
+        can improve performance by reducing the amount of data that needs to be
+        processed by Spark.
+
+        This method is called once during query planning. By default, it returns
+        all filters, indicating that no filters can be pushed down. Subclasses can
+        override this method to implement filter pushdown.
+
+        It's recommended to implement this method only for data sources that natively
+        support filtering, such as databases and GraphQL APIs.
+
+        .. versionadded: 4.1.0
+
+        Parameters
+        ----------
+        filters : list of :class:`Filter`\\s
+
+        Returns
+        -------
+        iterable of :class:`Filter`\\s
+            Filters that still need to be evaluated by Spark post the data source
+            scan. This includes unsupported filters and partially pushed filters.
+            Every returned filter must be one of the input filters by reference.
+
+        Side effects
+        ------------
+        This method is allowed to modify `self`. The object must remain picklable.
+        Modifications to `self` are visible to the `partitions()` and `read()` methods.
+
+        Examples
+        --------
+        Support EqualTo filters:
+
+        >>> def pushdownFilters(self, filters):
+        ...     for filter in filters:
+        ...         if isinstance(filter, EqualTo):
+        ...             # Save supported filter for handling in partitions() and read()
+        ...             self.filters.append(filter)
+        ...         else:
+        ...             # Unsupported filter
+        ...             yield filter
+        """
         return filters
 
     def partitions(self) -> Sequence[InputPartition]:
