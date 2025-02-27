@@ -37,9 +37,9 @@ class PythonMicroBatchStream(
   extends MicroBatchStream
   with Logging
   with AcceptsLatestSeenOffset {
-  private def dataSourceReader =
+  private def createDataSourceFunc =
     ds.source.createPythonFunction(
-      ds.getOrCreateReaderInPython(shortName, outputSchema, options, isStreaming = true).reader)
+      ds.getOrCreateDataSourceInPython(shortName, options, Some(outputSchema)).dataSource)
 
   private val streamId = nextStreamId
   private var nextBlockId = 0L
@@ -50,7 +50,7 @@ class PythonMicroBatchStream(
   private var cachedInputPartition: Option[(String, String, PythonStreamingInputPartition)] = None
 
   private val runner: PythonStreamingSourceRunner =
-    new PythonStreamingSourceRunner(dataSourceReader, outputSchema)
+    new PythonStreamingSourceRunner(createDataSourceFunc, outputSchema)
   runner.init()
 
   override def initialOffset(): Offset = PythonStreamingSourceOffset(runner.initialOffset())
@@ -90,9 +90,10 @@ class PythonMicroBatchStream(
   }
 
   private lazy val readInfo: PythonDataSourceReadInfo = {
-    val reader =
-      ds.getOrCreateReaderInPython(shortName, outputSchema, options, isStreaming = true)
-    ds.source.createReadInfoInPython(reader, outputSchema, isStreaming = true)
+    ds.source.createReadInfoInPython(
+      ds.getOrCreateDataSourceInPython(shortName, options, Some(outputSchema)),
+      outputSchema,
+      isStreaming = true)
   }
 
   override def createReaderFactory(): PartitionReaderFactory = {

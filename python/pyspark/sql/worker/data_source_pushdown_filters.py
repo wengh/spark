@@ -21,11 +21,12 @@ from typing import IO, List
 from pyspark.errors import PySparkAssertionError, PySparkValueError
 from pyspark.serializers import UTF8Deserializer, read_int, write_int
 from pyspark.sql.datasource import (
+    DataSource,
     DataSourceReader,
     EqualTo,
     Filter,
 )
-from pyspark.sql.worker.internal.data_source_reader_info import DataSourceReaderInfo
+from pyspark.sql.types import StructType, _parse_datatype_json_string
 from pyspark.sql.worker.internal.data_source_worker import worker_main
 from pyspark.worker_util import pickleSer, read_command
 
@@ -44,24 +45,38 @@ class FilterRef:
 
 @worker_main
 def main(infile: IO, outfile: IO) -> None:
-    # Receive the data source reader instance.
-    reader_info = read_command(pickleSer, infile)
-    if not isinstance(reader_info, DataSourceReaderInfo):
+    # Receive the data source instance.
+    data_source = read_command(pickleSer, infile)
+    if not isinstance(data_source, DataSource):
         raise PySparkAssertionError(
             errorClass="DATA_SOURCE_TYPE_MISMATCH",
             messageParameters={
-                "expected": "a Python data source reader info of type 'DataSourceReaderInfo'",
-                "actual": f"'{type(reader_info).__name__}'",
+                "expected": "a Python data source instance of type 'DataSource'",
+                "actual": f"'{type(data_source).__name__}'",
             },
         )
 
-    reader = reader_info.reader
+    # Receive the data source output schema.
+    schema_json = utf8_deserializer.loads(infile)
+    schema = _parse_datatype_json_string(schema_json)
+    if not isinstance(schema, StructType):
+        raise PySparkAssertionError(
+            errorClass="DATA_SOURCE_TYPE_MISMATCH",
+            messageParameters={
+                "expected": "an output schema of type 'StructType'",
+                "actual": f"'{type(schema).__name__}'",
+            },
+        )
+
+    # Get the reader.
+    reader = data_source.reader(schema=schema)
+    # Validate the reader.
     if not isinstance(reader, DataSourceReader):
         raise PySparkAssertionError(
             errorClass="DATA_SOURCE_TYPE_MISMATCH",
             messageParameters={
-                "expected": "a Python data source reader of type 'DataSourceReader'",
-                "actual": f"'{type(reader_info).__name__}'",
+                "expected": "an instance of DataSourceReader",
+                "actual": f"'{type(reader).__name__}'",
             },
         )
 
@@ -105,8 +120,9 @@ def main(infile: IO, outfile: IO) -> None:
             },
         )
 
-    # pushdownFilters may mutate the reader, so we need to serialize it again.
-    pickleSer._write_with_length(reader_info, outfile)
+    # Monkey patch the data source instance to return the existing reader with the pushed down filters.
+    data_source.reader = lambda schema: reader  # type: ignore[method-assign]
+    pickleSer._write_with_length(data_source, outfile)
 
     # Return the supported filter indices.
     write_int(len(supported_filter_indices), outfile)

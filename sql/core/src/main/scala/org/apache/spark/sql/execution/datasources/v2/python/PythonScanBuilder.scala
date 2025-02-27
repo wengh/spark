@@ -29,17 +29,14 @@ class PythonScanBuilder(
     options: CaseInsensitiveStringMap)
     extends ScanBuilder
     with SupportsPushDownFilters {
-  private def batchReader =
-    ds.getOrCreateReaderInPython(shortName, outputSchema, options, isStreaming = false)
-
   private var supported: Array[Filter] = Array.empty
 
-  override def build(): Scan =
-    new PythonScan(ds, shortName, outputSchema, options)
+  override def build(): Scan = new PythonScan(ds, shortName, outputSchema, options)
 
   override def pushFilters(filters: Array[Filter]): Array[Filter] = {
-    val result = ds.source.pushdownFiltersInPython(batchReader, filters)
-    ds.setReaderInPython(result.reader)
+    val dataSource = ds.getOrCreateDataSourceInPython(shortName, options, Some(outputSchema))
+    val result = ds.source.pushdownFiltersInPython(dataSource, outputSchema, filters)
+    ds.setDataSourceInPython(dataSource.copy(dataSource = result.dataSource))
 
     // Partition the filters into supported and unsupported ones.
     val isPushed = result.isFilterPushed.zip(filters)
