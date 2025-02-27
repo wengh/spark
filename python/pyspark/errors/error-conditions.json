@@ -199,6 +199,11 @@
       "Unsupported return type ('<type>') from Python data source '<name>'. Expected types: <supported_types>."
     ]
   },
+  "DATA_SOURCE_PUSHDOWN_DISABLED": {
+    "message": [
+      "<type> implements pushFilters() but filter pushdown is disabled because '<conf>' is False. Run 'spark.conf.set(\"<conf>\", True)' to enable filter pushdown."
+    ]
+  },
   "DATA_SOURCE_RETURN_SCHEMA_MISMATCH": {
     "message": [
       "Return schema mismatch in the result from 'read' method. Expected: <expected> columns, Found: <actual> columns. Make sure the returned values match the required output schema."

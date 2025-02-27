@@ -17,6 +17,7 @@
 package org.apache.spark.sql.execution.datasources.v2.python
 
 import org.apache.spark.sql.connector.read.{Scan, ScanBuilder, SupportsPushDownFilters}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -42,6 +43,10 @@ class PythonScanBuilder(
 
   // Optionally called by DSv2 once to push down filters before the scan is built.
   override def pushFilters(filters: Array[Filter]): Array[Filter] = {
+    if (!SQLConf.get.pythonFilterPushDown) {
+      return filters
+    }
+
     val dataSource = ds.getOrCreateDataSourceInPython(shortName, options, Some(outputSchema))
     val result = ds.source.pushdownFiltersInPython(dataSource, outputSchema, filters)
 

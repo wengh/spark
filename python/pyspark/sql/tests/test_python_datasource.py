@@ -284,6 +284,7 @@ class BasePythonDataSourceTestsMixin:
             def reader(self, schema) -> "DataSourceReader":
                 return TestDataSourceReader()
 
+        self.spark.conf.set("spark.sql.python.filterPushdown.enabled", True)
         self.spark.dataSource.register(TestDataSource)
         df = self.spark.read.format("test").load().filter("x = 1 and y = 2")
         # only the y = 2 filter is applied post scan
@@ -311,6 +312,7 @@ class BasePythonDataSourceTestsMixin:
             def reader(self, schema) -> "DataSourceReader":
                 return TestDataSourceReader()
 
+        self.spark.conf.set("spark.sql.python.filterPushdown.enabled", True)
         self.spark.dataSource.register(TestDataSource)
         with self.assertRaisesRegex(Exception, "DATA_SOURCE_EXTRANEOUS_FILTERS"):
             self.spark.read.format("test").load().filter("x = 1").show()
@@ -330,11 +332,30 @@ class BasePythonDataSourceTestsMixin:
             def reader(self, schema) -> "DataSourceReader":
                 return TestDataSourceReader()
 
+        self.spark.conf.set("spark.sql.python.filterPushdown.enabled", True)
         self.spark.dataSource.register(TestDataSource)
         df = self.spark.read.format("TestDataSource").load().filter("x = 1 or x is null")
         assertDataFrameEqual(df, [Row(x=1)])  # works when not pushing down filters
         with self.assertRaisesRegex(Exception, "dummy error"):
             df.filter("x = 1").show()
+
+    def test_filter_pushdown_disabled(self):
+        class TestDataSourceReader(DataSourceReader):
+            def pushFilters(self, filters: List[Filter]) -> Iterable[Filter]:
+                assert False
+
+            def read(self, partition):
+                assert False
+
+        class TestDataSource(DataSource):
+            def reader(self, schema) -> "DataSourceReader":
+                return TestDataSourceReader()
+
+        self.spark.conf.set("spark.sql.python.filterPushdown.enabled", False)
+        self.spark.dataSource.register(TestDataSource)
+        df = self.spark.read.format("TestDataSource").schema("x int").load()
+        with self.assertRaisesRegex(Exception, "DATA_SOURCE_PUSHDOWN_DISABLED"):
+            df.show()
 
     def _check_filters(self, sql_type, sql_filter, python_filters):
         """
@@ -364,6 +385,7 @@ class BasePythonDataSourceTestsMixin:
             def reader(self, schema) -> "DataSourceReader":
                 return TestDataSourceReader()
 
+        self.spark.conf.set("spark.sql.python.filterPushdown.enabled", True)
         self.spark.dataSource.register(TestDataSource)
         df = self.spark.read.format("TestDataSource").load().filter(sql_filter)
         df.count()

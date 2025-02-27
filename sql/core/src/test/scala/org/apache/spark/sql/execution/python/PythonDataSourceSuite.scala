@@ -27,6 +27,7 @@ import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanHelper
 import org.apache.spark.sql.execution.datasources.DataSourceManager
 import org.apache.spark.sql.execution.datasources.v2.{BatchScanExec, DataSourceV2ScanRelation}
 import org.apache.spark.sql.execution.datasources.v2.python.PythonScan
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SharedSparkSession
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.Utils
@@ -252,6 +253,7 @@ class PythonDataSourceSuite extends PythonDataSourceSuiteBase {
     val schema = StructType.fromDDL("id INT, partition INT")
     val dataSource =
       createUserDefinedPythonDataSource(name = dataSourceName, pythonScript = dataSourceScript)
+    spark.conf.set(SQLConf.PYTHON_FILTER_PUSHDOWN_ENABLED, true)
     spark.dataSource.registerPython(dataSourceName, dataSource)
     val df =
       spark.read.format(dataSourceName).schema(schema).load().filter("id = 1 and partition = 0")

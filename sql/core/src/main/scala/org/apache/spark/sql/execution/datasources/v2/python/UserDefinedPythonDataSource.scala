@@ -441,6 +441,7 @@ private class UserDefinedPythonDataSourceReadRunner(
 
     // Send configurations
     dataOut.writeInt(SQLConf.get.arrowMaxRecordsPerBatch)
+    dataOut.writeBoolean(SQLConf.get.pythonFilterPushDown)
 
     dataOut.writeBoolean(isStreaming)
   }
