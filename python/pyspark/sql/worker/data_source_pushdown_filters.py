@@ -165,7 +165,8 @@ def main(infile: IO, outfile: IO) -> None:
                 },
             )
 
-        # Monkey patch the data source instance to return the existing reader with the pushed down filters.
+        # Monkey patch the data source instance
+        # to return the existing reader with the pushed down filters.
         data_source.reader = lambda schema: reader  # type: ignore[method-assign]
         pickleSer._write_with_length(data_source, outfile)
 
