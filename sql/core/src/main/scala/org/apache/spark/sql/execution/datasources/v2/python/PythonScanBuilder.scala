@@ -29,9 +29,16 @@ class PythonScanBuilder(
     options: CaseInsensitiveStringMap)
     extends ScanBuilder
     with SupportsPushDownFilters {
-  private var supported: Array[Filter] = Array.empty
+  private var supportedFilters: Array[Filter] = Array.empty
 
-  override def build(): Scan = new PythonScan(ds, shortName, outputSchema, options)
+  private def metadata: Map[String, String] = {
+    Map(
+      "PushedFilters" -> supportedFilters.mkString("[", ", ", "]"),
+      "ReadSchema" -> outputSchema.simpleString
+    )
+  }
+
+  override def build(): Scan = new PythonScan(ds, shortName, outputSchema, options, metadata)
 
   // Optionally called by DSv2 once to push down filters before the scan is built.
   override def pushFilters(filters: Array[Filter]): Array[Filter] = {
@@ -45,10 +52,10 @@ class PythonScanBuilder(
 
     // Partition the filters into supported and unsupported ones.
     val isPushed = result.isFilterPushed.zip(filters)
-    supported = isPushed.collect { case (true, filter) => filter }.toArray
+    supportedFilters = isPushed.collect { case (true, filter) => filter }.toArray
     val unsupported = isPushed.collect { case (false, filter) => filter }.toArray
     unsupported
   }
 
-  override def pushedFilters(): Array[Filter] = supported
+  override def pushedFilters(): Array[Filter] = supportedFilters
 }
