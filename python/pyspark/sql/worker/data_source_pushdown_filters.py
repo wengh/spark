@@ -196,6 +196,7 @@ def main(infile: IO, outfile: IO) -> None:
         write_int(SpecialLengths.END_OF_DATA_SECTION, outfile)
         sys.exit(-1)
 
+
 if __name__ == "__main__":
     # Read information about how to connect back to the JVM from the environment.
     java_port = int(os.environ["PYTHON_WORKER_FACTORY_PORT"])

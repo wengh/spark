@@ -291,7 +291,6 @@ class BasePythonDataSourceTestsMixin:
 
     def test_extraneous_filter(self):
         class TestDataSourceReader(DataSourceReader):
-
             def pushFilters(self, filters: List[Filter]) -> Iterable[Filter]:
                 yield EqualTo(("x",), 1)
 
@@ -318,7 +317,6 @@ class BasePythonDataSourceTestsMixin:
 
     def test_filter_pushdown_error(self):
         class TestDataSourceReader(DataSourceReader):
-
             def pushFilters(self, filters: List[Filter]) -> Iterable[Filter]:
                 raise Exception("dummy error")
 
@@ -351,7 +349,6 @@ class BasePythonDataSourceTestsMixin:
         """
 
         class TestDataSourceReader(DataSourceReader):
-
             def pushFilters(self, filters: List[Filter]) -> Iterable[Filter]:
                 expected = python_filters
                 assert filters == expected, (filters, expected)
