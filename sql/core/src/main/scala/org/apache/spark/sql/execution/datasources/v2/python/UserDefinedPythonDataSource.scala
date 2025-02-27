@@ -394,7 +394,7 @@ private class UserDefinedPythonDataSourceFilterPushdownRunner(
     filters: collection.Seq[Filter])
     extends PythonPlannerRunner[PythonFilterPushdownResult](reader) {
 
-  case class SerializedFilter(
+  private case class SerializedFilter(
       name: String,
       columnPath: collection.Seq[String],
       value: Int,
@@ -414,7 +414,7 @@ private class UserDefinedPythonDataSourceFilterPushdownRunner(
   // See the logic in `pyspark.sql.worker.data_source_pushdown_filters.py`.
   override val workerModule = "pyspark.sql.worker.data_source_pushdown_filters"
 
-  def isAnyFilterSupported: Boolean = !serializedFilters.isEmpty
+  def isAnyFilterSupported: Boolean = serializedFilters.nonEmpty
 
   override protected def writeToPython(dataOut: DataOutputStream, pickler: Pickler): Unit = {
     // Send Python data source

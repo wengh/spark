@@ -274,8 +274,8 @@ class Filter(ABC):
 
 @dataclass(frozen=True)
 class EqualTo(Filter):
-    columnPath: ColumnPath
-    value: Any
+    lhsColumnPath: ColumnPath
+    rhsValue: Any
 
 
 class InputPartition:

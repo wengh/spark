@@ -254,12 +254,14 @@ class BasePythonDataSourceTestsMixin:
                 self.has_filter = False
 
             def pushdownFilters(self, filters: List[Filter]) -> Iterable[Filter]:
-                assert len(filters) == 2, filters
-                assert set(filters) == {EqualTo(("x",), 1), EqualTo(("y",), 2)}, filters
+                assert set(filters) == {
+                    EqualTo(("x",), 1),
+                    EqualTo(("y",), 2),
+                }, filters
                 self.has_filter = True
                 # pretend we support x = 1 filter but in fact we don't
                 # so we only return y = 2 filter
-                yield EqualTo(("y",), 2)
+                yield filters[filters.index(EqualTo(("y",), 2))]
 
             def partitions(self):
                 assert self.has_filter
@@ -290,7 +292,7 @@ class BasePythonDataSourceTestsMixin:
     def test_extraneous_filter(self):
         class TestDataSourceReader(DataSourceReader):
             def pushdownFilters(self, filters: List[Filter]) -> Iterable[Filter]:
-                yield EqualTo(("",), 1)
+                yield EqualTo(("x",), 1)
 
             def partitions(self):
                 assert False
@@ -322,10 +324,6 @@ class BasePythonDataSourceTestsMixin:
                 yield [1]
 
         class TestDataSource(DataSource):
-            @classmethod
-            def name(cls):
-                return "test"
-
             def schema(self):
                 return "x int"
 
@@ -333,34 +331,53 @@ class BasePythonDataSourceTestsMixin:
                 return TestDataSourceReader()
 
         self.spark.dataSource.register(TestDataSource)
-        df = self.spark.read.format("test").load().filter("cos(x) > 0")
+        df = self.spark.read.format("TestDataSource").load().filter("x = 1 or x is null")
         assertDataFrameEqual(df, [Row(x=1)])  # works when not pushing down filters
         with self.assertRaisesRegex(Exception, "dummy error"):
             df.filter("x = 1").show()
 
-    def test_unsupported_filter(self):
+    def _check_filters(self, sql_type, sql_filter, python_filters):
+        """
+        Parameters
+        ----------
+        sql_type: str
+            The SQL type of the column x.
+        sql_filter: str
+            A SQL filter using the column x.
+        python_filters: List[Filter]
+            The expected python filters to be pushed down.
+        """
+
         class TestDataSourceReader(DataSourceReader):
             def pushdownFilters(self, filters: List[Filter]) -> Iterable[Filter]:
-                assert filters == [EqualTo(("x",), 1)], filters
+                expected = python_filters
+                assert filters == expected, (filters, expected)
                 return filters
 
             def read(self, partition):
-                yield [1, 2, 3]
+                yield from []
 
         class TestDataSource(DataSource):
-            @classmethod
-            def name(cls):
-                return "test"
-
             def schema(self):
-                return "x int, y int, z int"
+                return f"x {sql_type}"
 
             def reader(self, schema) -> "DataSourceReader":
                 return TestDataSourceReader()
 
         self.spark.dataSource.register(TestDataSource)
-        df = self.spark.read.format("test").load().filter("x = 1 and y = z")
-        assertDataFrameEqual(df, [])
+        df = self.spark.read.format("TestDataSource").load().filter(sql_filter)
+        df.count()
+
+    def test_unsupported_filter(self):
+        self._check_filters(
+            "struct<a:int, b:int, c:int>", "x.a = 1 and x.b = x.c", [EqualTo(("x", "a"), 1)]
+        )
+        self._check_filters("int", "x <> 0", [])
+        self._check_filters("int", "x = 1 or x > 2", [])
+        self._check_filters("int", "(0 < x and x < 1) or x = 2", [])
+        self._check_filters("int", "x % 5 = 1", [])
+        self._check_filters("boolean", "not x", [])
+        self._check_filters("array<int>", "x[0] = 1", [])
 
     def _get_test_json_data_source(self):
         import json

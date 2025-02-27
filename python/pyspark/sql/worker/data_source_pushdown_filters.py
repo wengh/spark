@@ -15,23 +15,31 @@
 # limitations under the License.
 #
 
+from dataclasses import dataclass, field
 from typing import IO, List
 
 from pyspark.errors import PySparkAssertionError, PySparkValueError
-from pyspark.serializers import (
-    UTF8Deserializer,
-    read_int,
-    write_int,
+from pyspark.serializers import UTF8Deserializer, read_int, write_int
+from pyspark.sql.datasource import (
+    DataSourceReader,
+    EqualTo,
+    Filter,
 )
-from pyspark.sql.datasource import DataSourceReader, EqualTo, Filter
 from pyspark.sql.worker.internal.data_source_reader_info import DataSourceReaderInfo
 from pyspark.sql.worker.internal.data_source_worker import worker_main
-from pyspark.worker_util import (
-    read_command,
-    pickleSer,
-)
+from pyspark.worker_util import pickleSer, read_command
+
 
 utf8_deserializer = UTF8Deserializer()
+
+
+@dataclass(frozen=True)
+class FilterRef:
+    filter: Filter = field(compare=False)
+    id: int = field(init=False)  # only id is used for comparison
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "id", id(self.filter))
 
 
 @worker_main
@@ -59,14 +67,14 @@ def main(infile: IO, outfile: IO) -> None:
 
     # Receive the pushdown filters.
     num_filters = read_int(infile)
-    filters: List[Filter] = []
+    filters: List[FilterRef] = []
     for _ in range(num_filters):
         name = utf8_deserializer.loads(infile)
         if name == "EqualTo":
             num_parts = read_int(infile)
             column_path = tuple(utf8_deserializer.loads(infile) for _ in range(num_parts))
             value = read_int(infile)
-            filters.append(EqualTo(column_path, value))
+            filters.append(FilterRef(EqualTo(column_path, value)))
         else:
             raise PySparkAssertionError(
                 errorClass="DATA_SOURCE_UNSUPPORTED_FILTER",
@@ -76,7 +84,9 @@ def main(infile: IO, outfile: IO) -> None:
             )
 
     # Push down the filters and get the indices of the unsupported filters.
-    unsupported_filters = set(reader.pushdownFilters(list(filters)))
+    unsupported_filters = set(
+        FilterRef(f) for f in reader.pushdownFilters([ref.filter for ref in filters])
+    )
     supported_filter_indices = []
     for i, filter in enumerate(filters):
         if filter in unsupported_filters:
