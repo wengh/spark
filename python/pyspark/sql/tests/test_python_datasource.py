@@ -253,7 +253,7 @@ class BasePythonDataSourceTestsMixin:
             def __init__(self):
                 self.has_filter = False
 
-            def pushdownFilters(self, filters: List[Filter]) -> Iterable[Filter]:
+            def pushFilters(self, filters: List[Filter]) -> Iterable[Filter]:
                 assert set(filters) == {
                     EqualTo(("x",), 1),
                     EqualTo(("y",), 2),
@@ -291,7 +291,8 @@ class BasePythonDataSourceTestsMixin:
 
     def test_extraneous_filter(self):
         class TestDataSourceReader(DataSourceReader):
-            def pushdownFilters(self, filters: List[Filter]) -> Iterable[Filter]:
+
+            def pushFilters(self, filters: List[Filter]) -> Iterable[Filter]:
                 yield EqualTo(("x",), 1)
 
             def partitions(self):
@@ -317,7 +318,8 @@ class BasePythonDataSourceTestsMixin:
 
     def test_filter_pushdown_error(self):
         class TestDataSourceReader(DataSourceReader):
-            def pushdownFilters(self, filters: List[Filter]) -> Iterable[Filter]:
+
+            def pushFilters(self, filters: List[Filter]) -> Iterable[Filter]:
                 raise Exception("dummy error")
 
             def read(self, partition):
@@ -349,7 +351,8 @@ class BasePythonDataSourceTestsMixin:
         """
 
         class TestDataSourceReader(DataSourceReader):
-            def pushdownFilters(self, filters: List[Filter]) -> Iterable[Filter]:
+
+            def pushFilters(self, filters: List[Filter]) -> Iterable[Filter]:
                 expected = python_filters
                 assert filters == expected, (filters, expected)
                 return filters

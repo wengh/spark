@@ -65,7 +65,7 @@ def main(infile: IO, outfile: IO) -> None:
     - a list of filters to be pushed down
 
     This process then creates a `DataSourceReader` instance by calling the `reader` method
-    on the `DataSource` instance. It applies the filters by calling the `pushdownFilters` method
+    on the `DataSource` instance. It applies the filters by calling the `pushFilters` method
     on the reader and determines which filters are supported. The data source with updated reader
     is then sent back to the JVM along with the indices of the supported filters.
     """
@@ -145,7 +145,7 @@ def main(infile: IO, outfile: IO) -> None:
 
         # Push down the filters and get the indices of the unsupported filters.
         unsupported_filters = set(
-            FilterRef(f) for f in reader.pushdownFilters([ref.filter for ref in filters])
+            FilterRef(f) for f in reader.pushFilters([ref.filter for ref in filters])
         )
         supported_filter_indices = []
         for i, filter in enumerate(filters):

@@ -261,21 +261,48 @@ class Filter(ABC):
 
     Notes
     -----
-    Column references are represented as a tuple of strings. For example, the column
-    `col1` is represented as `("col1",)`, and the nested column `a.b.c` is
-    represented as `("a", "b", "c")`.
+    Column references are represented as a tuple of strings. For example:
+
+    +----------------+----------------------+
+    | Column         | Representation       |
+    +----------------+----------------------+
+    | `col1`         | `("col1",)`          |
+    | `a.b.c`        | `("a", "b", "c")`    |
+    +----------------+----------------------+
 
     Literal values are represented as Python objects of types such as
     `int`, `float`, `str`, `bool`, `datetime`, etc.
     See `Data Types <https://spark.apache.org/docs/latest/sql-ref-datatypes.html>`_
     for more information about how values are represented in Python.
+
+    Currently only the equality of attribute and literal value is supported for
+    filter pushdown. Other types of filters cannot be pushed down.
+
+    Examples
+    --------
+    Supported filters
+
+    +---------------------+--------------------------------------------+
+    | SQL filter          | Representation                             |
+    +---------------------+--------------------------------------------+
+    | `a.b.c = 1`         | `EqualTo(("a", "b", "c"), 1)`              |
+    | `a = 1`             | `EqualTo(("a", "b", "c"), 1)`              |
+    | `a = 'hi'`          | `EqualTo(("a",), "hi")`                    |
+    | `a = array(1, 2)`   | `EqualTo(("a",), [1, 2])`                  |
+    +---------------------+--------------------------------------------+
+
+    Unsupported filters
+    - `a = b`
+    - `f(a, b) = 1`
+    - `a % 2 = 1`
+    - `a[0] = 1`
     """
 
 
 @dataclass(frozen=True)
 class EqualTo(Filter):
-    lhsColumnPath: ColumnPath
-    rhsValue: Any
+    attribute: ColumnPath
+    value: Any
 
 
 class InputPartition:
@@ -324,9 +351,11 @@ class DataSourceReader(ABC):
     .. versionadded: 4.0.0
     """
 
-    def pushdownFilters(self, filters: List["Filter"]) -> Iterable["Filter"]:
+    def pushFilters(self, filters: List["Filter"]) -> Iterable["Filter"]:
         """
         Called with the list of filters that can be pushed down to the data source.
+
+        The list of filters should be interpreted as the AND of the elements.
 
         Filter pushdown allows the data source to handle a subset of filters. This
         can improve performance by reducing the amount of data that needs to be
@@ -359,9 +388,20 @@ class DataSourceReader(ABC):
 
         Examples
         --------
-        Support EqualTo filters:
+        Example filters and the resulting arguments passed to pushFilters:
 
-        >>> def pushdownFilters(self, filters):
+        +-------------------------------+---------------------------------------------+
+        | Filters                       | Pushdown Arguments                          |
+        +-------------------------------+---------------------------------------------+
+        | `a = 1 and b = 2`             | `[EqualTo(("a",), 1), EqualTo(("b",), 2)]`  |
+        | `a = 1 or b = 2`              | `[]`                                        |
+        | `a = 1 or (b = 2 and c = 3)`  | `[]`                                        |
+        | `a = 1 and (b = 2 or c = 3)`  | `[EqualTo(("a",), 1)]`                      |
+        +-------------------------------+---------------------------------------------+
+
+        Implement pushFilters to support EqualTo filters only:
+
+        >>> def pushFilters(self, filters):
         ...     for filter in filters:
         ...         if isinstance(filter, EqualTo):
         ...             # Save supported filter for handling in partitions() and read()
