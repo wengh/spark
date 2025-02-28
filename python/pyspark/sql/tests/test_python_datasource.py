@@ -33,6 +33,7 @@ from pyspark.sql.datasource import (
     CaseInsensitiveDict,
 )
 from pyspark.sql.functions import spark_partition_id
+from pyspark.sql.session import SparkSession
 from pyspark.sql.types import Row, StructType
 from pyspark.testing.sqlutils import (
     have_pyarrow,
@@ -44,6 +45,8 @@ from pyspark.testing.sqlutils import ReusedSQLTestCase, SPARK_HOME
 
 @unittest.skipIf(not have_pyarrow, pyarrow_requirement_message)
 class BasePythonDataSourceTestsMixin:
+    spark: SparkSession
+
     def test_basic_data_source_class(self):
         class MyDataSource(DataSource):
             ...
@@ -318,9 +321,11 @@ class BasePythonDataSourceTestsMixin:
             self.spark.read.format("test").load().filter("x = 1").show()
 
     def test_filter_pushdown_error(self):
+        error_str = "dummy error"
+
         class TestDataSourceReader(DataSourceReader):
             def pushFilters(self, filters: List[Filter]) -> Iterable[Filter]:
-                raise Exception("dummy error")
+                raise Exception(error_str)
 
             def read(self, partition):
                 yield [1]
@@ -336,8 +341,8 @@ class BasePythonDataSourceTestsMixin:
         self.spark.dataSource.register(TestDataSource)
         df = self.spark.read.format("TestDataSource").load().filter("x = 1 or x is null")
         assertDataFrameEqual(df, [Row(x=1)])  # works when not pushing down filters
-        with self.assertRaisesRegex(Exception, "dummy error"):
-            df.filter("x = 1").show()
+        with self.assertRaisesRegex(Exception, error_str):
+            df.filter("x = 1").explain()
 
     def test_filter_pushdown_disabled(self):
         class TestDataSourceReader(DataSourceReader):
