@@ -250,6 +250,13 @@ class DataSource(ABC):
 
 
 ColumnPath = Tuple[str, ...]
+"""
+A tuple of strings representing a column reference.
+
+For example, `("a", "b", "c")` represents the column `a.b.c`.
+
+.. versionadded: 4.1.0
+"""
 
 
 @dataclass(frozen=True)

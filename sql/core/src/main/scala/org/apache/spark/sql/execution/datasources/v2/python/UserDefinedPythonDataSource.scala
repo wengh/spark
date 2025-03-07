@@ -321,6 +321,9 @@ private class UserDefinedPythonDataSourceRunner(
   }
 }
 
+/**
+ * @param isFilterPushed A sequence of bools indicating whether each filter is pushed down.
+ */
 case class PythonFilterPushdownResult(
     dataSource: Array[Byte],
     isFilterPushed: collection.Seq[Boolean])
